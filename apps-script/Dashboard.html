@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <!-- Ambil 2 font dari Google Fonts: Fraunces untuk judul, Inter untuk isi -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ===================================================
+       DESIGN TOKENS - warna & spacing dasar, taruh di satu
+       tempat supaya gampang diubah nanti tanpa cari-cari.
+       =================================================== */
+    :root {
+      --bg: #F1F3F0;
+      --surface: #FFFFFF;
+      --ink: #1C2620;
+      --muted: #70807A;
+      --primary: #123B2E;   /* teal tua, lebih gelap & elegan dari sebelumnya */
+      --accent: #B8862E;    /* gold/mustard, ganti dari oranye */
+      --line: #DCE2DD;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px; background: var(--bg); color: var(--ink);
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* ---------- HEADER ---------- */
+    .page-header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+    }
+    .page-header h1 {
+      font-family: 'Inter', sans-serif; font-weight: 700; font-size: 30px;
+      margin: 0; color: var(--primary); letter-spacing: -0.5px;
+    }
+    .page-header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    .refresh-badge {
+      font-size: 12px; color: var(--muted); background: var(--surface);
+      padding: 6px 12px; border-radius: 20px; border: 1px solid var(--line);
+    }
+
+    /* ---------- FILTER CHIPS ---------- */
+    .filter-row { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }
+    .filter-group { display: flex; flex-direction: column; gap: 6px; }
+    .filter-group span { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .chip-set { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip {
+      border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+      padding: 6px 14px; border-radius: 20px; font-size: 13px; cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .chip:hover { border-color: var(--primary); }
+    .chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+    /* ---------- KPI ROW ---------- */
+    .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .kpi-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .kpi-card .value {
+      font-family: 'Inter', sans-serif; font-size: 26px; font-weight: 700; color: var(--primary);
+    }
+
+    /* ---------- MAIN GRID ---------- */
+    .main-grid {
+      display: grid; grid-template-columns: 2.2fr 1fr; gap: 16px; margin-bottom: 16px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 20px;
+    }
+    .panel h4 {
+      margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--ink);
+    }
+
+    /* KUNCI PERBAIKAN BUG CHART KEGEDEAN:
+       canvas dibungkus div dengan tinggi TETAP (fixed height).
+       Tanpa ini, canvas Chart.js akan tumbuh mengikuti parent
+       tanpa batas, apalagi di layout grid/flex. */
+    .chart-box { position: relative; height: 240px; }
+    .chart-box.tall { height: 300px; }
+
+    .insight-list { list-style: none; padding: 0; margin: 0; }
+    .insight-list li {
+      padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.5;
+    }
+    .insight-list li:last-child { border-bottom: none; }
+    .insight-list b { color: var(--accent); }
+
+    .chart-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+
+    /* ---------- TABLE ---------- */
+    .table-panel input {
+      width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+      margin-bottom: 12px; font-family: 'Inter', sans-serif; font-size: 13px; box-sizing: border-box;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; }
+    .table-scroll { max-height: 360px; overflow-y: auto; }
+    .table-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+    .loading { text-align: center; padding: 60px; color: var(--muted); }
+
+    /* Responsive: di layar kecil, tumpuk semua jadi 1 kolom */
+    @media (max-width: 900px) {
+      .kpi-row { grid-template-columns: 1fr 1fr; }
+      .main-grid, .chart-grid-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="page-header">
+    <div>
+      <h1>Supermarket Sales</h1>
+      <p>Ringkasan performa penjualan lintas Branch, produk, dan metode pembayaran</p>
+    </div>
+    <div class="refresh-badge" id="refreshBadge">Memuat data...</div>
+  </div>
+
+  <div class="filter-row">
+    <div class="filter-group">
+      <span>Branch</span>
+      <div class="chip-set" id="filterBranch"></div>
+    </div>
+    <div class="filter-group">
+      <span>Product line</span>
+      <div class="chip-set" id="filterProduct"></div>
+    </div>
+    <div class="filter-group">
+      <span>Gender</span>
+      <div class="chip-set" id="filterGender"></div>
+    </div>
+  </div>
+
+  <div class="kpi-row" id="kpiRow">
+    <div class="loading">Memuat KPI...</div>
+  </div>
+
+  <div class="chart-grid-3">
+    <div class="panel">
+      <h4>Top 5 Product Line</h4>
+      <div class="chart-box"><canvas id="productChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h4>Metode Pembayaran</h4>
+      <div class="chart-box"><canvas id="paymentChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h4>Branch × Gender</h4>
+      <div class="chart-box"><canvas id="genderChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="panel">
+      <h4>Total Sales per Branch</h4>
+      <div class="chart-box tall"><canvas id="branchChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h4>Insight Otomatis</h4>
+      <ul class="insight-list" id="insightList"></ul>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:16px;">
+    <h4>Tren Sales per Bulan</h4>
+    <div class="chart-box"><canvas id="monthChart"></canvas></div>
+  </div>
+
+  <div class="panel table-panel">
+    <h4>Detail Transaksi</h4>
+    <input type="text" id="searchInput" placeholder="Cari Invoice ID / Branch / Product...">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Invoice ID</th><th>Branch</th><th>Product</th><th>Total</th><th>Payment</th><th>Rating</th></tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <p class="table-note" id="tableNote"></p>
+  </div>
+
+  <script>
+    var allTransactions = [];
+    var charts = {};
+    var activeFilters = { branch: 'all', product: 'all', gender: 'all' };
+    var MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+    google.script.run.withSuccessHandler(function(data) {
+      allTransactions = data;
+      document.getElementById('refreshBadge').textContent =
+        'Data per: ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      buildFilterChips();
+      applyFilters();
+    }).getDashboardData();
+
+    // ===================================================
+    // Bikin tombol chip filter secara otomatis dari data
+    // (bukan ditulis manual di HTML, biar fleksibel)
+    // ===================================================
+    function buildFilterChips() {
+      renderChipSet('filterBranch', 'branch', getUniqueValues('branch'));
+      renderChipSet('filterProduct', 'product', getUniqueValues('product'));
+      renderChipSet('filterGender', 'gender', getUniqueValues('gender'));
+    }
+
+    function getUniqueValues(field) {
+      var values = allTransactions.map(function(t) { return t[field]; });
+      return values.filter(function(v, i) { return values.indexOf(v) === i; });
+    }
+
+    function renderChipSet(containerId, filterKey, values) {
+      var container = document.getElementById(containerId);
+      var options = ['all'].concat(values);
+      container.innerHTML = options.map(function(v) {
+        var label = v === 'all' ? 'Semua' : v;
+        var isActive = activeFilters[filterKey] === v ? 'active' : '';
+        return '<button class="chip ' + isActive + '" data-key="' + filterKey + '" data-value="' + v + '">' + label + '</button>';
+      }).join('');
+
+      // pasang event klik ke setiap chip di dalam container ini
+      container.querySelectorAll('.chip').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          activeFilters[filterKey] = btn.dataset.value;
+          // update tampilan "active" cuma di dalam grup chip yang sama
+          container.querySelectorAll('.chip').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          applyFilters();
+        });
+      });
+    }
+
+    function applyFilters() {
+      var filtered = allTransactions.filter(function(t) {
+        return (activeFilters.branch === 'all'  || t.branch  === activeFilters.branch)
+            && (activeFilters.product === 'all' || t.product === activeFilters.product)
+            && (activeFilters.gender === 'all'  || t.gender  === activeFilters.gender);
+      });
+      renderKPI(filtered);
+      renderInsights(filtered);
+      renderCharts(filtered);
+      renderTable(filtered);
+    }
+
+    function groupSum(data, groupField, sumField) {
+      var result = {};
+      data.forEach(function(row) {
+        var key = row[groupField];
+        result[key] = (result[key] || 0) + row[sumField];
+      });
+      return result;
+    }
+
+    function renderKPI(data) {
+      var totalSales = data.reduce(function(s, t) { return s + t.total; }, 0);
+      var totalTrx = data.length;
+      var avgRating = totalTrx ? data.reduce(function(s, t) { return s + t.rating; }, 0) / totalTrx : 0;
+      var avgBasket = totalTrx ? totalSales / totalTrx : 0;
+
+      document.getElementById('kpiRow').innerHTML =
+        kpiCard('Total Sales', '$' + totalSales.toLocaleString(undefined, { maximumFractionDigits: 0 })) +
+        kpiCard('Total Transaksi', totalTrx) +
+        kpiCard('Rata-rata Rating', avgRating.toFixed(1) + ' / 10') +
+        kpiCard('Rata-rata Basket', '$' + avgBasket.toFixed(1));
+    }
+    function kpiCard(label, value) {
+      return '<div class="kpi-card"><div class="label">' + label + '</div><div class="value">' + value + '</div></div>';
+    }
+
+    // ===================================================
+    // INSIGHT OTOMATIS
+    // Menyusun 3-4 kalimat insight berdasarkan angka tertinggi
+    // di data yang sudah difilter - ini yang bikin dashboard
+    // "cerita", bukan cuma numpuk angka mentah.
+    // ===================================================
+    function renderInsights(data) {
+      var list = document.getElementById('insightList');
+      if (data.length === 0) { list.innerHTML = '<li>Tidak ada data untuk kombinasi filter ini.</li>'; return; }
+
+      var byBranch = groupSum(data, 'branch', 'total');
+      var topBranch = Object.entries(byBranch).sort(function(a, b) { return b[1] - a[1]; })[0];
+
+      var byProduct = groupSum(data, 'product', 'total');
+      var topProduct = Object.entries(byProduct).sort(function(a, b) { return b[1] - a[1]; })[0];
+
+      var byPayment = {};
+      data.forEach(function(t) { byPayment[t.payment] = (byPayment[t.payment] || 0) + 1; });
+      var topPayment = Object.entries(byPayment).sort(function(a, b) { return b[1] - a[1]; })[0];
+      var paymentShare = ((topPayment[1] / data.length) * 100).toFixed(0);
+
+      var avgRating = data.reduce(function(s, t) { return s + t.rating; }, 0) / data.length;
+
+      list.innerHTML = [
+        '<li>Branch dengan sales tertinggi: <b>' + topBranch[0] + '</b> ($' + Math.round(topBranch[1]).toLocaleString() + ')</li>',
+        '<li>Product line paling laris: <b>' + topProduct[0] + '</b></li>',
+        '<li>Metode pembayaran favorit: <b>' + topPayment[0] + '</b> (' + paymentShare + '% transaksi)</li>',
+        '<li>Rata-rata kepuasan pelanggan: <b>' + avgRating.toFixed(1) + ' / 10</b></li>'
+      ].join('');
+    }
+
+    function renderCharts(data) {
+      drawBarChart('branchChart', groupSum(data, 'branch', 'total'));
+
+      var byProduct = groupSum(data, 'product', 'total');
+      var top5 = Object.entries(byProduct).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 5);
+      drawBarChart('productChart', Object.fromEntries(top5));
+
+      var byPayment = {};
+      data.forEach(function(t) { byPayment[t.payment] = (byPayment[t.payment] || 0) + 1; });
+      drawPieChart('paymentChart', byPayment);
+
+      drawGroupedBarChart('genderChart', data);
+
+      var byMonth = groupSum(data, 'month', 'total');
+      var sortedMonths = Object.keys(byMonth).sort(function(a, b) { return a - b; });
+      var monthLabels = sortedMonths.map(function(m) { return MONTH_NAMES[m]; });
+      var monthValues = sortedMonths.map(function(m) { return byMonth[m]; });
+      drawLineChart('monthChart', monthLabels, monthValues);
+    }
+
+    // options bersama supaya chart tidak "meledak" ukurannya:
+    // maintainAspectRatio:false WAJIB dipasangkan dengan
+    // div pembungkus yang punya height tetap (lihat CSS .chart-box)
+    var baseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } }
+    };
+
+    function drawBarChart(canvasId, groupedObj) {
+      if (charts[canvasId]) charts[canvasId].destroy();
+      charts[canvasId] = new Chart(document.getElementById(canvasId), {
+        type: 'bar',
+        data: { labels: Object.keys(groupedObj), datasets: [{ data: Object.values(groupedObj), backgroundColor: '#1E4B3A', borderRadius: 4 }] },
+        options: baseOptions
+      });
+    }
+
+    function drawPieChart(canvasId, groupedObj) {
+      if (charts[canvasId]) charts[canvasId].destroy();
+      charts[canvasId] = new Chart(document.getElementById(canvasId), {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(groupedObj),
+          datasets: [{ data: Object.values(groupedObj), backgroundColor: ['#1E4B3A', '#BD5B34', '#6E7A70', '#8FAF9E', '#D9C8A9'] }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } } }
+      });
+    }
+
+    function drawLineChart(canvasId, labels, values) {
+      if (charts[canvasId]) charts[canvasId].destroy();
+      charts[canvasId] = new Chart(document.getElementById(canvasId), {
+        type: 'line',
+        data: { labels: labels, datasets: [{ data: values, borderColor: '#1E4B3A', backgroundColor: 'rgba(30,75,58,0.08)', fill: true, tension: 0.3 }] },
+        options: baseOptions
+      });
+    }
+
+    function drawGroupedBarChart(canvasId, data) {
+      if (charts[canvasId]) charts[canvasId].destroy();
+      var branches = getUniqueValues('branch');
+      var maleData = branches.map(function(b) {
+        return data.filter(function(t) { return t.branch === b && t.gender === 'Male'; }).reduce(function(s, t) { return s + t.total; }, 0);
+      });
+      var femaleData = branches.map(function(b) {
+        return data.filter(function(t) { return t.branch === b && t.gender === 'Female'; }).reduce(function(s, t) { return s + t.total; }, 0);
+      });
+      charts[canvasId] = new Chart(document.getElementById(canvasId), {
+        type: 'bar',
+        data: {
+          labels: branches,
+          datasets: [
+            { label: 'Male', data: maleData, backgroundColor: '#1E4B3A', borderRadius: 4 },
+            { label: 'Female', data: femaleData, backgroundColor: '#BD5B34', borderRadius: 4 }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } } }
+      });
+    }
+
+    var currentTableData = [];
+    function renderTable(data) {
+      currentTableData = data;
+      drawTableRows(data.slice(0, 200));
+      document.getElementById('tableNote').textContent =
+        'Menampilkan ' + Math.min(200, data.length) + ' dari ' + data.length + ' baris sesuai filter aktif.';
+    }
+    function drawTableRows(rows) {
+      document.getElementById('tableBody').innerHTML = rows.map(function(t) {
+        return '<tr><td>' + t.invoiceId + '</td><td>' + t.branch + '</td><td>' + t.product +
+               '</td><td>$' + t.total.toFixed(2) + '</td><td>' + t.payment + '</td><td>' + t.rating + '</td></tr>';
+      }).join('');
+    }
+    document.getElementById('searchInput').addEventListener('input', function(e) {
+      var keyword = e.target.value.toLowerCase();
+      var filtered = currentTableData.filter(function(t) {
+        return t.invoiceId.toLowerCase().includes(keyword) || t.branch.toLowerCase().includes(keyword) || t.product.toLowerCase().includes(keyword);
+      });
+      drawTableRows(filtered.slice(0, 200));
+    });
+  </script>
+</body>
+</html>
