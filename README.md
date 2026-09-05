@@ -53,7 +53,7 @@ supermarket-sales-dashboard/
 
 ## Data Source
 
-[Supermarket Sales dataset](https://www.kaggle.com/datasets/aungpyaeap/supermarket-sales) (Kaggle) — used here for portfolio/learning purposes.
+[Supermarket Sales dataset](https://www.kaggle.com/datasets/muhdaniyal/supermarket-sales-cleaned-dataset) (Kaggle) — used here for portfolio/learning purposes.
 
 ## Lessons Learned
 
